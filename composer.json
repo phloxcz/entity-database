@@ -1,0 +1,51 @@
+{
+    "name": "phloxcz/entity-database",
+    "description": "Entity layer for Nette Database — typed entities generated from DB schema, with property hooks and dirty tracking.",
+    "keywords": ["nette", "database", "entity", "orm", "active-row"],
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/phloxcz/entity-database",
+    "authors": [
+        {
+            "name": "Phlox",
+            "homepage": "https://github.com/phloxcz"
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "nette/database": ">=3.2.2",
+        "nette/di": ">=3.1",
+        "nette/neon": ">=3.4",
+        "nette/php-generator": ">=4.1.7",
+        "nette/caching": ">=3.0",
+        "nette/utils": ">=4.0",
+        "nette/schema": ">=1.3",
+        "symfony/console": "^5.0|^6.0|^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Phlox\\EntityDatabase\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Examples\\Sqlite\\": "examples/sqlite/",
+            "Examples\\Mysql\\Entity\\": "examples/mysql/Entity/",
+            "Examples\\Postgres\\Entity\\": "examples/postgres/Entity/",
+            "Examples\\Mssql\\Entity\\": "examples/mssql/Entity/"
+        }
+    },
+    "bin": [
+        "bin/entity-database"
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "0.1-dev"
+        }
+    }
+}

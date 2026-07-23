@@ -1,0 +1,37 @@
+roles:
+	class: Role
+	comment: "Uživatelská role"
+
+users:
+	class: User
+	comment: "Aplikační uživatel"
+	searchable:
+		- email
+	override:
+		is_active:
+			type: bool
+		created_at:
+			type: '\Nette\Utils\DateTime'
+		password_hash:
+			access: w
+	virtual:
+		orderCount:
+			type: int
+			access: rw
+			comment: "Počet objednávek — dopočítá aplikace"
+	references:
+		role_id: { name: role, comment: "Role uživatele" }
+	hasMany:
+		orders:
+			through: user_id
+		activeOrders:
+			table: orders
+			through: user_id
+			condition: "status != 'cancelled'"
+
+orders:
+	class: Order
+	comment: "Objednávka"
+	override:
+		created_at:
+			type: '\Nette\Utils\DateTime'

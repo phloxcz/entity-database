@@ -1,0 +1,78 @@
+#!/usr/bin/env php
+<?php
+/**
+ * This file is part of phloxcz/entity-database.
+ *
+ * (c) Phlox <https://github.com/phloxcz>
+ *
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
+if (!isset($_composer_autoload_path) || !is_file($_composer_autoload_path)) {
+    fwrite(STDERR, "Composer autoloader not found. Run 'composer install' first.\n");
+    exit(1);
+}
+
+require $_composer_autoload_path;
+
+// ------------------------------------------------------------------
+// Resolve bootstrap file
+// ------------------------------------------------------------------
+// Priority:
+//   1. --bootstrap=path or --bootstrap path CLI option
+//   2. Auto-detection: look for www/index.php or index.php above vendor/
+
+$bootstrap = null;
+
+foreach ($argv as $i => $arg) {
+    if (str_starts_with($arg, '--bootstrap=')) {
+        $bootstrap = substr($arg, 12);
+        break;
+    }
+    if ($arg === '--bootstrap' && isset($argv[$i + 1])) {
+        $bootstrap = $argv[$i + 1];
+        break;
+    }
+    if ($arg === '-b' && isset($argv[$i + 1])) {
+        $bootstrap = $argv[$i + 1];
+        break;
+    }
+}
+
+if ($bootstrap !== null) {
+    $bootstrap = realpath($bootstrap);
+    if ($bootstrap === false || !is_file($bootstrap)) {
+        fwrite(STDERR, "Bootstrap file not found. Check the --bootstrap path.\n");
+        exit(1);
+    }
+} else {
+    $vendorDir  = dirname($_composer_autoload_path);
+    $candidates = [
+        $vendorDir . '/../www/index.php',
+        $vendorDir . '/../index.php',
+        $vendorDir . '/../../www/index.php',
+        $vendorDir . '/../../index.php',
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (is_file($candidate)) {
+            $bootstrap = realpath($candidate);
+            break;
+        }
+    }
+
+    if ($bootstrap === null) {
+        fwrite(STDERR,
+            "Cannot find application bootstrap (index.php).\n" .
+            "Use: vendor/bin/entity-database generate --bootstrap path/to/index.php\n"
+        );
+        exit(1);
+    }
+}
+
+define('_ENTITY_DATABASE_CLI_COMMAND_', true);
+
+require_once $bootstrap;

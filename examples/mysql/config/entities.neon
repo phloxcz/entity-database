@@ -1,0 +1,21 @@
+# No type overrides needed anywhere below — is_active (TINYINT(1)), preferences
+# (JSON) and permissions (SET) are all auto-detected by the generator/adapter.
+
+roles:
+	class: Role
+	comment: "Uživatelská role"
+
+users:
+	class: User
+	comment: "Aplikační uživatel"
+	searchable:
+		- email
+	references:
+		role_id: { name: role, comment: "Role uživatele" }
+	hasMany:
+		orders:
+			through: user_id
+
+orders:
+	class: Order
+	comment: "Objednávka"

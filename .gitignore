@@ -1,0 +1,25 @@
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/.phpstan/
+/coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Dev temp
+/temp/
+/log/
+
+# Example apps (generated/runtime artifacts only — keep the source scripts and config)
+/examples/*/temp/
+/examples/*/data/
+/examples/*/Entity/*.php
+!/examples/*/Entity/.gitkeep
+
+# Local tool settings
+/.claude/settings.local.json

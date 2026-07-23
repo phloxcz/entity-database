@@ -1,0 +1,12 @@
+database:
+	default:
+		dsn: 'sqlite:%appDir%/data/app.db'
+
+entityDatabase:
+	connections:
+		default:
+			entities:
+				-	namespace: Examples\Sqlite\Entity
+					output: %appDir%/Entity
+					config:
+						- %appDir%/config/entities.neon
