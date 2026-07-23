@@ -41,13 +41,4 @@ final class EntityContext
      * @var array<string, true>
      */
     public array $modified = [];
-
-    /**
-     * Stores values written via property hook setters, indexed by property name.
-     * On read the hook returns from here when $modified[$prop] is set,
-     * otherwise it falls back to $activeRow.
-     *
-     * @var array<string, mixed>
-     */
-    public array $values = [];
 }

@@ -165,7 +165,9 @@ class User extends Entity
 }
 ```
 
-Real typed PHP properties, not just `@property` doc-comments — IDEs (PhpStorm, VS Code + Intelephense) get autocomplete for free. `access` (`r`/`w`/`rw`) controls which hooks get generated; `MetaStorage` derives it back from the hooks present via reflection, so it's always in sync with what the class actually does.
+Real typed PHP properties, not just `@property` doc-comments — IDEs (PhpStorm, VS Code + Intelephense) get autocomplete for free. `access` (`r`/`w`/`rw`) controls which hooks get generated; `MetaStorage` reads it straight from the `#[Property]` attribute rather than inspecting which hooks exist — a write-only property still needs a throwing `get` hook to actually block reads, so hook presence alone can no longer tell "readable" from "write-only".
+
+`access: w` isn't a security boundary — `toArrayDb()`/`toModifiedArray()`/`toModifiedArrayDb()` can always read the raw value back out, on purpose (that's how a repository gets a password hash to persist it or verify it against). What it blocks is the *implicit* paths: a plain `$user->passwordHash` read, `$user->toArray()`, iterating the entity, logging/serializing it whole — the ways a secret field leaks by accident. The methods that do return it have `Db`/`Modified` in the name, so a call site says out loud that it's doing something deliberate and low-level.
 
 ---
 

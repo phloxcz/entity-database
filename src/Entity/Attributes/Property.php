@@ -29,6 +29,7 @@ use Nette;
  * @property-read string $condition
  * @property-read bool $virtual
  * @property-read string $json
+ * @property-read string $access
  */
 #[Attribute(Attribute::TARGET_PROPERTY)]
 class Property
@@ -60,8 +61,10 @@ class Property
     private ?string $condition;
         
     private bool $virtual;
-    
+
     private ?string $json;
+
+    private string $access;
 
 
     public function __construct(
@@ -77,7 +80,8 @@ class Property
         ?string $through = null,
         ?string $condition = null,
         bool $virtual = false,
-        ?string $json = null
+        ?string $json = null,
+        string $access = 'rw'
     )
     {
         $this->col = $col;
@@ -86,9 +90,9 @@ class Property
         $this->searchable = $searchable;
         $this->format = $format;
         $this->nativeType = $nativeType;
-        
+
         $this->type = $type;
-        
+
         $this->ref = $ref;
         $this->related = $related;
         $this->through = $through;
@@ -97,6 +101,8 @@ class Property
         $this->virtual = $virtual;
 
         $this->json = $json;
+
+        $this->access = $access;
     }
 
     public function getCol(): ?string
@@ -175,8 +181,13 @@ class Property
     {
         return $this->json;
     }
-    
-    
+
+    public function getAccess(): string
+    {
+        return $this->access;
+    }
+
+
     public function getProps(): array
     {
         return [
@@ -192,7 +203,8 @@ class Property
             'through' => $this->getThrough(),
             'condition' => $this->getCondition(),
             'virtual' => $this->isVirtual(),
-            'json' => $this->getJson()
+            'json' => $this->getJson(),
+            'access' => $this->getAccess(),
         ];
     }
 }

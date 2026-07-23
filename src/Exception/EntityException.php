@@ -16,6 +16,10 @@ namespace Phlox\EntityDatabase\Exception;
 class EntityException extends \Exception
 {
     const INVALID_FORMAT = 1;
-    
+
     const INVALID_CALL = 2;
+
+    const WRITE_ONLY_PROPERTY = 3;
+
+    const UNDECLARED_PROPERTY = 4;
 }

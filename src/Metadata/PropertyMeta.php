@@ -26,6 +26,8 @@ final class PropertyMeta
     public readonly ?string $format;
     public readonly ?string $nativeType;
     public readonly ?string $access;
+    public readonly bool $readable;
+    public readonly bool $writable;
     public readonly ?string $comment;
     public readonly ?string $ref;
     public readonly ?string $condition;
@@ -36,5 +38,10 @@ final class PropertyMeta
         foreach ($attrs as $k => $v) {
             $this->{$k} = $v;
         }
+
+        // Derived from $access here (rather than by the caller) so the two can
+        // never end up unset or out of sync with it.
+        $this->readable = str_contains($this->access ?? 'rw', 'r');
+        $this->writable = str_contains($this->access ?? 'rw', 'w');
     }
 }

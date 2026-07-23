@@ -101,6 +101,7 @@ class PhpEntityRenderer
             'searchable' => $p->searchable,
             'virtual'    => $p->virtual,
             'type'       => $p->type,
+            'access'     => $p->access,
         ];
         if ($p->nativeType !== null) $attrs['nativeType'] = $p->nativeType;
         if ($p->format !== null)     $attrs['format']     = $p->format;
@@ -111,9 +112,21 @@ class PhpEntityRenderer
         $wantsGet = str_contains($p->access, 'r');
         $wantsSet = str_contains($p->access, 'w');
 
+        // A property with no `set` hook still accepts a plain external write by
+        // default in PHP 8.4 — omitting the hook alone does NOT make it read-only.
+        // public/private(set) closes that: external assignment then throws.
+        // (There's no equivalent trick for the opposite direction — PHP rejects a
+        // get visibility weaker than set — so write-only uses writeOnlyGetExpr()
+        // below instead, which throws from an explicit get hook.)
+        if ($wantsGet && !$wantsSet) {
+            $prop->setVisibility('public', 'private');
+        }
+
         if ($p->virtual) {
             if ($wantsGet) {
                 $prop->addHook('get', "\$this->{$p->name}");
+            } elseif ($wantsSet) {
+                $prop->addHook('get', $this->writeOnlyGetExpr($p->name));
             }
             if ($wantsSet) {
                 $this->addSetHook($prop, $p->name, $p->type, "\$this->{$p->name} = \$value;");
@@ -123,10 +136,29 @@ class PhpEntityRenderer
 
         if ($wantsGet) {
             $prop->addHook('get', $this->buildColumnGetExpr($p));
+        } elseif ($wantsSet) {
+            $prop->addHook('get', $this->writeOnlyGetExpr($p->name));
         }
         if ($wantsSet) {
             $this->addColumnSetHook($prop, $p);
         }
+    }
+
+    /**
+     * Blocks reads on a write-only property. Omitting the get hook entirely
+     * is not enough — PHP then falls back to a plain read of the backing
+     * storage, silently exposing whatever was last written (e.g. a password
+     * hash). Entity::toArrayDb() remains the deliberate, visible way to read
+     * a write-only column's raw value — it goes straight to ActiveRow and
+     * never touches this hook.
+     */
+    private function writeOnlyGetExpr(string $name): string
+    {
+        $message = 'Property $' . $name . ' is write-only.';
+
+        return 'throw new \Phlox\EntityDatabase\Exception\EntityException('
+            . $this->dump($message)
+            . ', \Phlox\EntityDatabase\Exception\EntityException::WRITE_ONLY_PROPERTY)';
     }
 
     private function buildColumnGetExpr(EntityPropDefinition $p): string
@@ -209,6 +241,11 @@ class PhpEntityRenderer
         $prop = $class->addProperty($r->name)
             ->setType($r->type)
             ->setNullable(true);
+        // No setVisibility() here either: the get hook never references $this->{$r->name},
+        // so PHP already treats this as a fully virtual (storage-less) property and
+        // rejects external writes on its own ("Property ... is read-only") — asymmetric
+        // visibility isn't just unnecessary here, PHP outright refuses to declare it on
+        // a property with no backing storage at all.
 
         if ($r->comment) {
             $prop->addComment($r->comment);
@@ -218,6 +255,7 @@ class PhpEntityRenderer
             'type'    => $r->type,
             'ref'     => $r->ref,
             'through' => $r->column,
+            'access'  => 'r',
         ]);
 
         $prop->addHook('get',
@@ -236,6 +274,8 @@ class PhpEntityRenderer
     {
         $prop = $class->addProperty($c->name)
             ->setType('\Phlox\EntityDatabase\Database\Table\GroupedSelection');
+        // Same as addRefProperty(): no backing-storage reference in the get hook below,
+        // so PHP already rejects external writes to this property on its own.
 
         if ($c->comment) {
             $prop->addComment($c->comment);
@@ -244,6 +284,7 @@ class PhpEntityRenderer
         $attrs = [
             'related' => $c->related,
             'through' => $c->column,
+            'access'  => 'r',
         ];
         if ($c->condition !== null) {
             $attrs['condition'] = $c->condition;

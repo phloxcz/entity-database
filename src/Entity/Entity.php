@@ -16,6 +16,7 @@ use Nette\Database\Table\ActiveRow;
 use Phlox\EntityDatabase\Database\Table\Selection;
 use Phlox\EntityDatabase\Exception\EntityException;
 use Phlox\EntityDatabase\Metadata\MetaStorage;
+use Phlox\EntityDatabase\Metadata\PropertyMeta;
 
 /**
  * Abstract base class for all generated entities.
@@ -88,7 +89,19 @@ abstract class Entity implements \ArrayAccess, \IteratorAggregate
 
 
     // -------------------------------------------------------------------------
-    // Magic accessors — fallback for properties without hooks (e.g. extra SELECTed columns)
+    // Magic accessors
+    //
+    // __get()/__isset() are a READ-ONLY fallback for names with no declared
+    // property at all — e.g. an extra computed/concatenated column from a
+    // custom SELECT that isn't mapped in entities.neon. They proxy straight to
+    // ActiveRow, which itself throws Nette\MemberAccessException for a column
+    // that genuinely isn't in the result set — so a typo here still fails loud.
+    //
+    // __set()/__unset() are NOT a symmetric write-side overlay — entities have
+    // no dynamic properties. Writing to a name with no declared property is
+    // always a mistake (typo, or a value that belongs in `virtual:` in
+    // entities.neon instead) and throws immediately, rather than accepting it
+    // silently and only surfacing the problem on the next unrelated read.
     // -------------------------------------------------------------------------
 
     public function __get(string $name): mixed
@@ -98,20 +111,24 @@ abstract class Entity implements \ArrayAccess, \IteratorAggregate
 
     public function __set(string $name, mixed $value): void
     {
-        // Write to modified overlay — does NOT propagate to activeRow.
-        // Generated property hooks use $this->_ctx->values / $this->_ctx->modified directly.
-        $this->_ctx->values[$name]   = $value;
-        $this->_ctx->modified[$name] = true;
+        throw new EntityException(
+            'Entity ' . static::class . " has no property '\${$name}'. Check for a typo, or declare it "
+                . '(a real column, or under virtual: for a computed/scratch value) in entities.neon.',
+            EntityException::UNDECLARED_PROPERTY,
+        );
     }
 
     public function __isset(string $name): bool
     {
-        return isset($this->_ctx->modified[$name]) || $this->_ctx->activeRow?->__isset($name);
+        return (bool) $this->_ctx->activeRow?->__isset($name);
     }
 
     public function __unset(string $name): void
     {
-        unset($this->_ctx->values[$name], $this->_ctx->modified[$name]);
+        throw new EntityException(
+            'Entity ' . static::class . " has no property '\${$name}' to unset.",
+            EntityException::UNDECLARED_PROPERTY,
+        );
     }
 
 
@@ -136,6 +153,11 @@ abstract class Entity implements \ArrayAccess, \IteratorAggregate
             if ($propMeta->virtual || $propMeta->col === null || $propMeta->ref !== null || $propMeta->related !== null) {
                 continue;
             }
+            // Skip write-only properties (access: w, e.g. password_hash) — their get
+            // hook always throws by design; toArray() must stay safe to call regardless.
+            if (!$propMeta->readable) {
+                continue;
+            }
             $result[$propMeta->name] = $this->{$propMeta->name};
         }
 
@@ -151,6 +173,72 @@ abstract class Entity implements \ArrayAccess, \IteratorAggregate
     public function toArrayDb(): array
     {
         return $this->_ctx->activeRow?->toArray() ?? [];
+    }
+
+    /**
+     * Returns just the properties changed via a typed setter since the entity
+     * was fetched (or since the last successful saveModified()), keyed by
+     * property name. Values are read straight from each property's backing
+     * storage — bypassing its get hook — so this works uniformly regardless
+     * of access level (e.g. a write-only property like passwordHash, whose
+     * get hook always throws, still shows up here).
+     *
+     * @return array<string, mixed>
+     */
+    public function toModifiedArray(): array
+    {
+        $result = [];
+
+        foreach (array_keys($this->_ctx->modified) as $propName) {
+            $propMeta = $this->_ctx->meta->byProp[$propName] ?? null;
+            if ($propMeta === null) {
+                continue;
+            }
+            $result[$propName] = $this->rawPropertyValue($propMeta);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Same as toModifiedArray(), but keyed by DB column name and with each
+     * value passed through EntityHelpers::encodeForStorage() — i.e. exactly
+     * the payload saveModified() would send to ActiveRow::update(), handed to
+     * you instead for a manual/bulk write (raw SQL, Selection::update() across
+     * several rows, queuing, …).
+     *
+     * @return array<string, mixed>
+     */
+    public function toModifiedArrayDb(): array
+    {
+        $result = [];
+
+        foreach (array_keys($this->_ctx->modified) as $propName) {
+            $propMeta = $this->_ctx->meta->byProp[$propName] ?? null;
+            if ($propMeta === null || $propMeta->virtual || $propMeta->col === null) {
+                continue; // virtual properties and relations aren't real columns
+            }
+            $result[$propMeta->col] = EntityHelpers::encodeForStorage($propMeta, $this->rawPropertyValue($propMeta));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Reads a property's current value the cheapest correct way. For anything
+     * readable, that's just calling its own get hook: since this is only ever
+     * called for properties flagged modified, the hook's own modified-check
+     * always resolves to the same raw backing value we'd get via reflection —
+     * so there's no reason to pay for reflection there. Only a write-only
+     * property (whose get hook unconditionally throws) needs the
+     * ReflectionProperty::getRawValue() escape hatch instead.
+     */
+    private function rawPropertyValue(PropertyMeta $propMeta): mixed
+    {
+        if ($propMeta->readable) {
+            return $this->{$propMeta->name};
+        }
+        return (new \ReflectionProperty(static::class, $propMeta->name))->getRawValue($this);
     }
 
 
@@ -173,17 +261,9 @@ abstract class Entity implements \ArrayAccess, \IteratorAggregate
     {
         $activeRow = $this->requireActiveRow('saveModified');
 
-        if (!$this->_ctx->modified) {
+        $data = $this->toModifiedArrayDb();
+        if (!$data) {
             return false;
-        }
-
-        $data = [];
-        foreach (array_keys($this->_ctx->modified) as $propName) {
-            $propMeta = $this->_ctx->meta->byProp[$propName] ?? null;
-            if ($propMeta === null || $propMeta->virtual || $propMeta->col === null) {
-                continue; // virtual properties and relations aren't real columns
-            }
-            $data[$propMeta->col] = EntityHelpers::encodeForStorage($propMeta, $this->{$propName});
         }
 
         $result = $activeRow->update($data);

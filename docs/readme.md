@@ -463,7 +463,19 @@ final class UserRepository
 }
 ```
 
-Klíčový detail: `password_hash` má v `entities.neon` `override: { password_hash: { access: w } }` — vygenerovaná property má tedy **jen setter, žádný getter**. `$user->passwordHash` nejde nikdy přečíst přes typovanou property (nejde to ani omylem — chybí get hook úplně), takže haš se nemůže náhodou objevit v `toArray()`, logu, JSON exportu apod. Jediná cesta, jak se k uloženému hashi dostat (typicky pro `password_verify()` při loginu), je `Entity::toArrayDb()` — čte přímo z podkladového `ActiveRow` a obchází property hooky. Je to záměrná asymetrie: přístup k hashi je vždy viditelný, explicitní opt-in, ne něco, co se stane omylem.
+Klíčový detail: `password_hash` má v `entities.neon` `override: { password_hash: { access: w } }`. `$user->passwordHash` nejde přečíst přes typovanou property — pokus o to vyhodí `EntityException::WRITE_ONLY_PROPERTY` — takže haš se nemůže náhodou objevit v `toArray()`, logu, JSON exportu, `foreach ($user as ...)` apod. Jediné cesty, jak se k uloženému hashi dostat, jsou `Entity::toArrayDb()` (typicky pro `password_verify()` při loginu) a `toModifiedArray()`/`toModifiedArrayDb()` (pro manuální/hromadné uložení) — obě záměrně obcházejí property hooky a čtou raw hodnotu.
+
+**`access: w` ale není bezpečnostní hranice** — kdokoliv smí zavolat `toArrayDb()`/`toModifiedArrayDb()` a haš dostane, stejně jako dřív. Chrání jen proti *náhodnému* úniku přes implicitní/generické cesty čtení entity (obyčejný property read, `toArray()`, iterace, serializace) — proti chybě typu „vrátím celou entitu z controlleru". Cesty, které haš skutečně vrací, mají v názvu `Db`/`Modified`, takže je z volajícího kódu vidět, že jde o záměrný, nízkoúrovňový přístup, ne o omyl.
+
+### Jak je `access: r`/`access: w` skutečně vynucené
+
+PHP 8.4 property hooks toto samo o sobě nehlídají tak, jak by se čekalo — pouhé vynechání `get`/`set` hooku **nestačí**:
+
+- Property jen s `get` hookem (žádný `set`) **defaultně pořád přijme obyčejný zápis zvenku** (jde rovnou do backing storage, mimo náš hook). Generátor proto u `access: r` sloupcových a virtuálních properties navíc nastaví asymetrickou viditelnost (`public private(set)`), která zápis zvenku skutečně zablokuje.
+- U BelongsTo/HasMany properties (`role`, `orders`, …) tohle řešit nemusí — jejich `get` hook nikdy nesahá na vlastní backing storage (pokaždé se přepočítává z `activeRow`), takže je PHP samo bere jako plně virtuální a zápis zvenku odmítne bez nutnosti cokoliv nastavovat (asymetrická viditelnost by tam navíc ani nešla použít — PHP ji na "storage-less" property nedovolí).
+- Naopak property jen se `set` hookem (žádný `get`) **defaultně pořád dovolí obyčejné čtení zvenku** — přesně proto `access: w` property v runtime vždy sama vyhodí výjimku ve svém `get` hooku, viz `passwordHash` výše. Asymetrická viditelnost tady nejde použít v opačném směru (PHP odmítne "get slabší než set").
+
+Metadata (`PropertyMeta::$access`) se odvozují přímo z `#[Property]` atributu (co vygeneroval `PhpEntityRenderer`), ne zpětně z přítomnosti hooků — jakmile `access: w` property potřebuje vlastní (vyhazující) `get` hook kvůli vynucení, přítomnost hooku už sama o sobě nic nevypovídá o tom, jestli je property čitelná.
 
 ---
 
@@ -951,6 +963,8 @@ $db->table('users')->fetch()
 | `MappingException` | `ClassNotFound` (2) | Entita je nakonfigurována, ale třída neexistuje |
 | `EntityException` | `INVALID_FORMAT` (1) | Nelze parsovat DateTime nebo neplatný typ |
 | `EntityException` | `INVALID_CALL` (2) | Neplatné volání metody na entitě (mj. `saveModified()`/`delete()`/`__call` bez podkladového `ActiveRow`) |
+| `EntityException` | `WRITE_ONLY_PROPERTY` (3) | Čtení property s `access: w` (např. `password_hash`) — použij `Entity::toArrayDb()` |
+| `EntityException` | `UNDECLARED_PROPERTY` (4) | Zápis/`unset()` na property, kterou entita nemá (typo, nebo patří do `virtual:`) |
 | `SearchException` | `NoSearchableProperties` (1) | `Selection::search()` na entitě bez `searchable: true` sloupce |
 | `SearchException` | `DiacriticsNotSupported` (2) | `search(..., ignoreDiacritics: true)` na driveru bez podpory (SQLite) |
 | `\Nette\IOException` | — | Konfigurační soubor entit nenalezen |

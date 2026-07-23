@@ -73,12 +73,16 @@ final class MetaStorage
         foreach ($rc->getProperties() as $prop) {
             /** @var ReflectionProperty $prop */
             foreach ($prop->getAttributes(Property::class) as $attr) {
-                $hooks    = $prop->getHooks();
                 $propData = $attr->newInstance()->getProps();
 
                 $propData['name']    = $prop->getName();
                 $propData['comment'] = self::cleanDocComment($prop->getDocComment());
-                $propData['access']  = (isset($hooks['get']) ? 'r' : '') . (isset($hooks['set']) ? 'w' : '');
+                // 'access' comes from the #[Property] attribute (set by PhpEntityRenderer to
+                // match the hooks it generated) rather than being re-derived from hook presence
+                // here: a write-only property still needs a `get` hook — one that throws — to
+                // actually block reads (PHP has no other way to enforce that direction), so
+                // "does a get hook exist" is no longer a reliable signal for "is this readable".
+                // PropertyMeta itself derives readable/writable from it.
 
                 $properties[] = new PropertyMeta($propData);
             }
