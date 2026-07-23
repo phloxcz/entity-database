@@ -267,9 +267,13 @@ Generátor vytvoří soubor přibližně v tomto tvaru:
 
 namespace App\Entity;
 
+use Nette\Utils\DateTime as NetteDateTime;
+use Phlox\EntityDatabase\Database\Table\GroupedSelection;
 use Phlox\EntityDatabase\Entity\Attributes\Property;
 use Phlox\EntityDatabase\Entity\Attributes\Table;
 use Phlox\EntityDatabase\Entity\Entity;
+use Phlox\EntityDatabase\Entity\EntityHelpers;
+use Phlox\EntityDatabase\Exception\EntityException;
 
 /**
  * Uživatel aplikace
@@ -277,72 +281,77 @@ use Phlox\EntityDatabase\Entity\Entity;
 #[Table(name: 'users')]
 class User extends Entity
 {
-    #[Property(col: 'id', key: true, nullable: false, nativeType: 'int', type: 'int')]
+    #[Property(col: 'id', key: true, nullable: false, type: 'int', nativeType: 'int')]
     public int $id {
-        get => $this->_ctx->modified['id'] ?? false
-            ? $this->id
-            : $this->_ctx->activeRow?->id ?? null;
-        set(?int $value) {
+        set(int $value) {
             $this->id = $value;
             $this->_ctx->modified['id'] = true;
         }
+        get => $this->_ctx->modified['id'] ?? false
+            ? $this->id
+            : $this->_ctx->activeRow?->id ?? null;
     }
 
     /** E-mail pro přihlášení */
-    #[Property(col: 'email', key: false, nullable: false, searchable: true, virtual: false, nativeType: 'varchar', type: 'string')]
+    #[Property(col: 'email', nullable: false, searchable: true, type: 'string', nativeType: 'varchar')]
     public string $email {
-        get => $this->_ctx->modified['email'] ?? false
-            ? $this->email
-            : $this->_ctx->activeRow?->email ?? null;
-        set(?string $value) {
+        set(string $value) {
             $this->email = $value;
             $this->_ctx->modified['email'] = true;
         }
+        get => $this->_ctx->modified['email'] ?? false
+            ? $this->email
+            : $this->_ctx->activeRow?->email ?? null;
     }
 
-    #[Property(col: 'password_hash', key: false, nullable: true, nativeType: 'varchar', type: 'string')]
-    public ?string $passwordHash {
+    // access: w — get vždy vyhodí výjimku, viz §7 níže
+    #[Property(col: 'password_hash', nullable: true, type: 'string', access: 'w', nativeType: 'varchar')]
+    public ?string $passwordHash = null {
         set(?string $value) {
             $this->passwordHash = $value;
             $this->_ctx->modified['passwordHash'] = true;
         }
+        get => throw new EntityException('Property $passwordHash is write-only.', EntityException::WRITE_ONLY_PROPERTY);
     }
 
-    #[Property(col: 'created_at', key: false, nullable: true, nativeType: 'timestamp', type: '\Nette\Utils\DateTime')]
-    public ?\Nette\Utils\DateTime $createdAt = null {
-        get => $this->_ctx->modified['createdAt'] ?? false
-            ? $this->createdAt
-            : $this->_ctx->activeRow?->created_at ?? null;
+    #[Property(col: 'created_at', nullable: true, type: '\Nette\Utils\DateTime', nativeType: 'timestamp')]
+    public ?NetteDateTime $createdAt = null {
         set(string|\DateTimeInterface|null $value) {
             $this->createdAt = match(true) {
                 $value === null => null,
-                $value instanceof \DateTimeInterface => \Nette\Utils\DateTime::from($value),
-                default => \Phlox\EntityDatabase\Entity\EntityHelpers::parseDateTime($value, 'Y-m-d H:i:s'),
+                $value instanceof \DateTimeInterface => NetteDateTime::from($value),
+                default => EntityHelpers::parseDateTime($value, 'Y-m-d H:i:s'),
             };
             $this->_ctx->modified['createdAt'] = true;
         }
+        get => $this->_ctx->modified['createdAt'] ?? false
+            ? $this->createdAt
+            : $this->_ctx->activeRow?->created_at ?? null;
     }
 
-    #[Property(col: 'is_active', key: false, nullable: true, nativeType: 'tinyint', type: 'bool')]
+    #[Property(col: 'is_active', nullable: true, type: 'bool', nativeType: 'tinyint')]
     public ?bool $active = null {
-        get => $this->_ctx->modified['active'] ?? false
-            ? $this->active
-            : $this->_ctx->activeRow?->is_active ?? null;
         set(?bool $value) {
             $this->active = $value;
             $this->_ctx->modified['active'] = true;
         }
+        get => $this->_ctx->modified['active'] ?? false
+            ? $this->active
+            : $this->_ctx->activeRow?->is_active ?? null;
     }
 
-    #[Property(type: '\App\Entity\Role', ref: 'roles', through: 'role_id')]
-    public ?\App\Entity\Role $role = null {
+    // BelongsTo — bez výchozí hodnoty: get hook nikdy nesahá na $this->role,
+    // PHP proto bere property jako plně virtuální (bez backing storage) a
+    // default by u ní vůbec nešel nastavit
+    #[Property(type: '\App\Entity\Role', ref: 'roles', through: 'role_id', access: 'r')]
+    public ?Role $role {
         get => ($row = $this->_ctx->activeRow?->ref('roles', 'role_id')) === null
             ? null
             : $this->_ctx->selection?->entityFactory->create($row, $this->_ctx->selection);
     }
 
-    #[Property(related: 'orders', through: 'user_id')]
-    public \Phlox\EntityDatabase\Database\Table\GroupedSelection $orders {
+    #[Property(related: 'orders', through: 'user_id', access: 'r')]
+    public GroupedSelection $orders {
         get => $this->_ctx->selection->createGroupedSelection(
             $this->_ctx->activeRow->related('orders', 'user_id')
         );
@@ -350,7 +359,7 @@ class User extends Entity
 }
 ```
 
-Vlastnosti jsou **skutečné typované PHP 8.4 property s hooks** (`get`/`set`), ne jen doc-komentáře — IDE (PhpStorm, VS Code s Intelephense) je díky tomu nabízí v autocomplete přirozeně, bez nutnosti `@property` anotací. `#[Property]` atribut na každé vlastnosti nese metadata pro `MetaStorage` (searchable, nativeType, relace…), skutečný název a přístupová práva (r/w) generátor odvozuje za běhu z reflexe hooků.
+Vlastnosti jsou **skutečné typované PHP 8.4 property s hooks** (`get`/`set`), ne jen doc-komentáře — IDE (PhpStorm, VS Code s Intelephense) je díky tomu nabízí v autocomplete přirozeně, bez nutnosti `@property` anotací. `#[Property]` atribut na každé vlastnosti nese metadata pro `MetaStorage` (searchable, nativeType, relace, `access`…) — `access` (r/w) čte `MetaStorage` přímo z tohoto atributu, ne odvozením z toho, jaké hooky na property skutečně jsou (viz §7 níže, proč). Generátor navíc na začátek souboru přidá `use` pro každou třídu, kterou tělo hooků použije (`EntityHelpers`, `EntityException`, `GroupedSelection`, `Nette\Utils\DateTime` jako `NetteDateTime`), takže se ve třídě samotné pracuje jen s krátkými jmény.
 
 ---
 

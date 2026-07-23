@@ -44,6 +44,37 @@ class PhpEntityRenderer
         $phpFile   = new Nette\PhpGenerator\PhpFile();
         $namespace = $phpFile->addNamespace($entity->namespace);
 
+        // Register `use` statements up front for everything this entity's hook
+        // bodies/attributes end up referencing, so the class body below can use
+        // short names throughout instead of repeating FQCNs on every property.
+        // Nette auto-shortens setExtends()/addAttribute()/setType() calls that
+        // match a registered use — but raw hook-body code (buildColumnGetExpr(),
+        // writeOnlyGetExpr(), addColumnSetHook()) is plain text to it, so those
+        // are written with the short names directly, kept in sync with this list
+        // by hand. \DateTime/\DateTimeInterface are deliberately left
+        // fully-qualified rather than imported: they're the property/parameter
+        // type (unambiguous either way), and importing them would collide with
+        // Nette\Utils\DateTime, which is also used in the same file.
+        $namespace->addUse(Attributes\Table::class);
+        $namespace->addUse(Attributes\Property::class);
+        if ($entity->extends !== null) {
+            $namespace->addUse($entity->extends);
+        }
+        if ($entity->collections) {
+            $namespace->addUse(\Phlox\EntityDatabase\Database\Table\GroupedSelection::class);
+        }
+        foreach ($entity->properties as $p) {
+            if ($this->isDateTimeType($p->type)) {
+                $namespace->addUse(\Nette\Utils\DateTime::class, 'NetteDateTime');
+            }
+            if ($this->usesEntityHelpers($p)) {
+                $namespace->addUse(\Phlox\EntityDatabase\Entity\EntityHelpers::class);
+            }
+            if ($this->isWriteOnly($p)) {
+                $namespace->addUse(\Phlox\EntityDatabase\Exception\EntityException::class);
+            }
+        }
+
         $class = $namespace->addClass($entity->name);
 
         if ($entity->comment) {
@@ -156,9 +187,27 @@ class PhpEntityRenderer
     {
         $message = 'Property $' . $name . ' is write-only.';
 
-        return 'throw new \Phlox\EntityDatabase\Exception\EntityException('
+        return 'throw new EntityException('
             . $this->dump($message)
-            . ', \Phlox\EntityDatabase\Exception\EntityException::WRITE_ONLY_PROPERTY)';
+            . ', EntityException::WRITE_ONLY_PROPERTY)';
+    }
+
+    /**
+     * Whether this property's generated get/set hooks reference EntityHelpers
+     * (so render() knows to `use` it) — kept in sync by hand with the
+     * conditions in buildColumnGetExpr()/addColumnSetHook() below.
+     */
+    private function usesEntityHelpers(EntityPropDefinition $p): bool
+    {
+        return $this->isDateTimeType($p->type)
+            || $p->nativeType === 'set'
+            || ($p->nativeType !== null && str_starts_with($p->nativeType, '_'))
+            || ($p->nativeType === 'bit' && strtolower(ltrim($p->type, '\\')) === 'bool');
+    }
+
+    private function isWriteOnly(EntityPropDefinition $p): bool
+    {
+        return str_contains($p->access, 'w') && !str_contains($p->access, 'r');
     }
 
     private function buildColumnGetExpr(EntityPropDefinition $p): string
@@ -174,14 +223,14 @@ class PhpEntityRenderer
         if ($p->nativeType === 'set') {
             return "\$this->_ctx->modified[{$this->dump($p->name)}] ?? false\n"
                 . "    ? \$this->{$p->name}\n"
-                . "    : ((\$raw = \$this->_ctx->activeRow?->{$p->column}) !== null ? \\Phlox\\EntityDatabase\\Entity\\EntityHelpers::parseMysqlSet(\$raw) : null)";
+                . "    : ((\$raw = \$this->_ctx->activeRow?->{$p->column}) !== null ? EntityHelpers::parseMysqlSet(\$raw) : null)";
         }
 
         // Postgres array column: native typname is '_'-prefixed (e.g. _int4, _text).
         if ($p->nativeType !== null && str_starts_with($p->nativeType, '_')) {
             return "\$this->_ctx->modified[{$this->dump($p->name)}] ?? false\n"
                 . "    ? \$this->{$p->name}\n"
-                . "    : ((\$raw = \$this->_ctx->activeRow?->{$p->column}) !== null ? \\Phlox\\EntityDatabase\\Entity\\EntityHelpers::parsePgArray(\$raw) : null)";
+                . "    : ((\$raw = \$this->_ctx->activeRow?->{$p->column}) !== null ? EntityHelpers::parsePgArray(\$raw) : null)";
         }
 
         // BIT/boolean column: some drivers (e.g. pdo_sqlsrv) hand back raw '1'/'0'
@@ -189,7 +238,7 @@ class PhpEntityRenderer
         if ($p->nativeType === 'bit' && strtolower(ltrim($p->type, '\\')) === 'bool') {
             return "\$this->_ctx->modified[{$this->dump($p->name)}] ?? false\n"
                 . "    ? \$this->{$p->name}\n"
-                . "    : ((\$raw = \$this->_ctx->activeRow?->{$p->column}) !== null ? \\Phlox\\EntityDatabase\\Entity\\EntityHelpers::parseBit(\$raw) : null)";
+                . "    : ((\$raw = \$this->_ctx->activeRow?->{$p->column}) !== null ? EntityHelpers::parseBit(\$raw) : null)";
         }
 
         return "\$this->_ctx->modified[{$this->dump($p->name)}] ?? false\n"
@@ -203,8 +252,8 @@ class PhpEntityRenderer
             $format = $this->dump($p->format ?? 'Y-m-d H:i:s');
             $body = "\$this->{$p->name} = match(true) {\n"
                 . "    \$value === null => null,\n"
-                . "    \$value instanceof \\DateTimeInterface => \\Nette\\Utils\\DateTime::from(\$value),\n"
-                . "    default => \\Phlox\\EntityDatabase\\Entity\\EntityHelpers::parseDateTime(\$value, {$format}),\n"
+                . "    \$value instanceof \\DateTimeInterface => NetteDateTime::from(\$value),\n"
+                . "    default => EntityHelpers::parseDateTime(\$value, {$format}),\n"
                 . "};\n"
                 . "\$this->_ctx->modified[{$this->dump($p->name)}] = true;";
 

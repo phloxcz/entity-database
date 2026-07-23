@@ -88,7 +88,11 @@ class GenericGeneratorAdapter implements GeneratorAdapter
     public function convertType(string $nativeType, array $vendor): string
     {
         $t = strtolower($nativeType ?? 'string');
-        return self::$typeMap[$t] ?? $t;
+        // Unknown native type (a vendor-specific one we haven't mapped, e.g. a
+        // future MySQL/Postgres addition) falls back to 'string' rather than
+        // the raw native type name — the latter is never a valid PHP type and
+        // would break the generated class.
+        return self::$typeMap[$t] ?? 'string';
     }
 
     public function getDatabaseIdent(): string

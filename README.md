@@ -111,38 +111,47 @@ foreach ($user->orders as $order) { ... }          // HasMany, lazy
 ## Generated entity example
 
 ```php
+use Phlox\EntityDatabase\Database\Table\GroupedSelection;
+use Phlox\EntityDatabase\Entity\Attributes\Property;
+use Phlox\EntityDatabase\Entity\Attributes\Table;
+use Phlox\EntityDatabase\Entity\Entity;
+use Phlox\EntityDatabase\Exception\EntityException;
+
 #[Table(name: 'users')]
 class User extends Entity
 {
     #[Property(col: 'id', key: true, nullable: false, type: 'int', nativeType: 'int')]
     public int $id {
-        get => $this->_ctx->modified['id'] ?? false
-            ? $this->id
-            : $this->_ctx->activeRow?->id ?? null;
         set(int $value) {
             $this->id = $value;
             $this->_ctx->modified['id'] = true;
         }
+        get => $this->_ctx->modified['id'] ?? false
+            ? $this->id
+            : $this->_ctx->activeRow?->id ?? null;
     }
 
     #[Property(col: 'email', nullable: false, searchable: true, type: 'string', nativeType: 'varchar')]
     public string $email {
-        get => $this->_ctx->modified['email'] ?? false
-            ? $this->email
-            : $this->_ctx->activeRow?->email ?? null;
         set(string $value) {
             $this->email = $value;
             $this->_ctx->modified['email'] = true;
         }
+        get => $this->_ctx->modified['email'] ?? false
+            ? $this->email
+            : $this->_ctx->activeRow?->email ?? null;
     }
 
-    // write-only (access: w) — no get hook, matches "password_hash: { access: w }" above
-    #[Property(col: 'password_hash', nullable: true, type: 'string', nativeType: 'varchar')]
+    // write-only (access: w) — get always throws, so the hash can only ever
+    // come back out through an explicit toArrayDb()/toModifiedArrayDb() call,
+    // never by accident (plain read, toArray(), iteration, ...)
+    #[Property(col: 'password_hash', nullable: true, type: 'string', nativeType: 'varchar', access: 'w')]
     public ?string $passwordHash = null {
         set(?string $value) {
             $this->passwordHash = $value;
             $this->_ctx->modified['passwordHash'] = true;
         }
+        get => throw new EntityException('Property $passwordHash is write-only.', EntityException::WRITE_ONLY_PROPERTY);
     }
 
     // BelongsTo — read-only, resolved via ActiveRow::ref()
@@ -157,7 +166,7 @@ class User extends Entity
 
     // HasMany — read-only, resolved via ActiveRow::related()
     #[Property(related: 'orders', through: 'user_id')]
-    public \Phlox\EntityDatabase\Database\Table\GroupedSelection $orders {
+    public GroupedSelection $orders {
         get => $this->_ctx->selection->createGroupedSelection(
             $this->_ctx->activeRow->related('orders', 'user_id')
         );
@@ -165,7 +174,7 @@ class User extends Entity
 }
 ```
 
-Real typed PHP properties, not just `@property` doc-comments — IDEs (PhpStorm, VS Code + Intelephense) get autocomplete for free. `access` (`r`/`w`/`rw`) controls which hooks get generated; `MetaStorage` reads it straight from the `#[Property]` attribute rather than inspecting which hooks exist — a write-only property still needs a throwing `get` hook to actually block reads, so hook presence alone can no longer tell "readable" from "write-only".
+Real typed PHP properties, not just `@property` doc-comments — IDEs (PhpStorm, VS Code + Intelephense) get autocomplete for free. `access` (`r`/`w`/`rw`) controls which hooks get generated; `MetaStorage` reads it straight from the `#[Property]` attribute rather than inspecting which hooks exist — a write-only property still needs a throwing `get` hook to actually block reads, so hook presence alone can no longer tell "readable" from "write-only". The generator also registers a `use` for every class a property's hooks end up referencing (`EntityHelpers`, `EntityException`, `GroupedSelection`, `Nette\Utils\DateTime` as `NetteDateTime`), so the class body itself only ever needs short names.
 
 `access: w` isn't a security boundary — `toArrayDb()`/`toModifiedArray()`/`toModifiedArrayDb()` can always read the raw value back out, on purpose (that's how a repository gets a password hash to persist it or verify it against). What it blocks is the *implicit* paths: a plain `$user->passwordHash` read, `$user->toArray()`, iterating the entity, logging/serializing it whole — the ways a secret field leaks by accident. The methods that do return it have `Db`/`Modified` in the name, so a call site says out loud that it's doing something deliberate and low-level.
 
