@@ -56,11 +56,15 @@ class GenericGeneratorAdapter implements GeneratorAdapter
         'tinytext' => 'string',
         'text' => 'string',
         'mediumtext' => 'string',
+        'longtext' => 'string',
         'binary' => 'string',
         'varbinary' => 'string',
         'enum' => 'string',
         'varying' => 'string',
+        'tinyblob' => 'string',
         'blob' => 'string',
+        'mediumblob' => 'string',
+        'longblob' => 'string',
         'xml' => 'string',
         
         // stream resource
