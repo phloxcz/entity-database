@@ -91,7 +91,13 @@ class Selection implements \IteratorAggregate, \Countable
      * "BDP-International" also matches a DB value stored as "BDP International"
      * (the hyphen would otherwise force an exact, unlikely-to-match substring).
      */
-    private const SearchSpecialChars = ':;-.,_[](){}/*+=|\\\'"<>?!@&~`–—„“‘’”‚';
+    private const SearchSpecialChars = [
+        ':',';','-','.',',','_','[',']',
+        '(',')','{','}','/','*','+','=',
+        '|','\\','\'','"','<','>','?','!',
+        '@','&','~','`','–','—',
+        '„','“','‘','’','”','‚'
+    ];
 
     /**
      * Filters the selection to rows where every word of $term appears
@@ -156,11 +162,11 @@ class Selection implements \IteratorAggregate, \Countable
     /** @return string[] */
     private function tokenizeSearchTerm(string $term): array
     {
-        if (preg_match('#^[' . preg_quote(self::SearchSpecialChars, '#') . ']+$#u', $term)) {
+        if (preg_match('#^[' . preg_quote(implode('', self::SearchSpecialChars), '#') . ']+$#u', $term)) {
             return [$term];
         }
 
-        $normalized = str_replace(str_split(self::SearchSpecialChars), ' ', $term);
+        $normalized = str_replace(self::SearchSpecialChars, ' ', $term);
 
         return array_values(array_filter(explode(' ', $normalized), static fn(string $w) => $w !== ''));
     }
