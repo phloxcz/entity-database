@@ -87,8 +87,24 @@ class Selection implements \IteratorAggregate, \Countable
     }
 
     /**
-     * Filters the selection to rows where $term appears (case-insensitively)
-     * in any of the entity's `searchable: true` columns — OR'd together.
+     * Separators folded to spaces before splitting $term into words — so e.g.
+     * "BDP-International" also matches a DB value stored as "BDP International"
+     * (the hyphen would otherwise force an exact, unlikely-to-match substring).
+     */
+    private const SearchSpecialChars = ':;-.,_[](){}/*+=|\\\'"<>?!@&~`–—„“‘’”‚';
+
+    /**
+     * Filters the selection to rows where every word of $term appears
+     * (case-insensitively) in the same `searchable: true` column — columns
+     * matched this way are then OR'd together. So "Jan Novák" matches a
+     * "full_name" column holding "Novák Jan" or "Jan Petr Novák" too, not
+     * just an exact "...Jan Novák..." substring.
+     *
+     * $term is first split into words on whitespace and on the separator
+     * characters in self::SearchSpecialChars (so "BDP-International" and
+     * "BDP International" search identically) — unless $term consists
+     * entirely of such characters, in which case it's kept as one literal
+     * word (so searching for a literal "@" or "-" still works).
      *
      * $ignoreDiacritics additionally folds accents (e.g. "e" matches "é"),
      * but requires DB-side support: MySQL 8+, Postgres with the `unaccent`
@@ -111,20 +127,42 @@ class Selection implements \IteratorAggregate, \Countable
             );
         }
 
+        $words = $this->tokenizeSearchTerm($term);
+        if (!$words) {
+            return $this;
+        }
+
         $adapter    = $this->resolveSearchAdapter();
         $driver     = $this->nSelection->getExplorer()->getConnection()->getDriver();
         $conditions = [];
         $params     = [];
 
         foreach ($meta->searchables as $column) {
-            [$sql, $conditionParams] = $adapter->buildCondition($driver->delimite($column), $term, $ignoreDiacritics);
-            $conditions[] = $sql;
-            array_push($params, ...$conditionParams);
+            $columnDb       = $driver->delimite($column);
+            $wordConditions = [];
+            foreach ($words as $word) {
+                [$sql, $conditionParams] = $adapter->buildCondition($columnDb, $word, $ignoreDiacritics);
+                $wordConditions[] = $sql;
+                array_push($params, ...$conditionParams);
+            }
+            $conditions[] = '(' . implode(' AND ', $wordConditions) . ')';
         }
 
         $this->nSelection->where('(' . implode(' OR ', $conditions) . ')', ...$params);
 
         return $this;
+    }
+
+    /** @return string[] */
+    private function tokenizeSearchTerm(string $term): array
+    {
+        if (preg_match('#^[' . preg_quote(self::SearchSpecialChars, '#') . ']+$#u', $term)) {
+            return [$term];
+        }
+
+        $normalized = str_replace(str_split(self::SearchSpecialChars), ' ', $term);
+
+        return array_values(array_filter(explode(' ', $normalized), static fn(string $w) => $w !== ''));
     }
 
     private function resolveSearchAdapter(): SearchAdapter
