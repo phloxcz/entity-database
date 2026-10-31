@@ -1,0 +1,29 @@
+# PHPStan: include in your phpstan.neon and list where the generated entities are —
+#
+#     includes:
+#         - vendor/phloxcz/entity-database/extension.neon
+#     parameters:
+#         entityDatabase:
+#             entityDirs:
+#                 - %currentWorkingDirectory%/app/Entity
+#                 - %currentWorkingDirectory%/extensions/*/src/Entity   # glob patterns allowed
+#
+# $explorer->table('user') is then a Selection<App\Entity\User>: fetch(), get(),
+# insert(), fetchAll() and iterating give the entity's class.
+
+parametersSchema:
+	entityDatabase: structure([
+		entityDirs: listOf(string())
+	])
+
+parameters:
+	entityDatabase:
+		entityDirs: []
+
+services:
+	-
+		class: Phlox\EntityDatabase\PHPStan\TableReturnTypeExtension
+		arguments:
+			entityDirs: %entityDatabase.entityDirs%
+		tags:
+			- phpstan.broker.dynamicMethodReturnTypeExtension

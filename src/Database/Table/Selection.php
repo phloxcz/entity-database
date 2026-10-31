@@ -26,6 +26,36 @@ use Phlox\EntityDatabase\Metadata\MetaStorage;
 /**
  * Wrapper around Nette Selection that returns typed Entity instances
  * instead of ActiveRow objects.
+ *
+ * T is the table's entity class: $explorer->table('user') is a
+ * Selection<\App\Entity\User> for PHPStan with the bundled extension
+ * (extension.neon, see README › PHPStan). The fluent methods of Nette's
+ * Selection reach it through __call() and are declared below.
+ *
+ * @template T of Entity
+ * @implements \IteratorAggregate<int|string, T>
+ *
+ * @method static select(string $columns, mixed ...$params)
+ * @method static wherePrimary(mixed $key)
+ * @method static where(string|array<int|string, mixed> $condition, mixed ...$params)
+ * @method static joinWhere(string $tableChain, string $condition, mixed ...$params)
+ * @method static whereOr(array<string, mixed> $parameters)
+ * @method static order(string $columns, mixed ...$params)
+ * @method static limit(?int $limit, ?int $offset = null)
+ * @method static page(int $page, int $itemsPerPage, ?int &$numOfPages = null)
+ * @method static group(string $columns, mixed ...$params)
+ * @method static having(string $having, mixed ...$params)
+ * @method static alias(string $tableChain, string $alias)
+ * @method static setPrimarySequence(string $sequence)
+ * @method ?string getPrimarySequence()
+ * @method string getSql()
+ * @method mixed fetchField(?string $column = null)
+ * @method array<mixed> fetchAssoc(string $path)
+ * @method mixed aggregation(string $function, ?string $groupFunction = null)
+ * @method mixed min(string $column)
+ * @method mixed max(string $column)
+ * @method mixed sum(string $column)
+ * @method \Nette\Database\Explorer getExplorer()
  */
 class Selection implements \IteratorAggregate, \Countable
 {
@@ -42,7 +72,7 @@ class Selection implements \IteratorAggregate, \Countable
      * Iterates the underlying Selection lazily (query runs on first access),
      * yielding typed Entity instances instead of ActiveRow.
      *
-     * @return \Generator<int|string, Entity>
+     * @return \Generator<int|string, T>
      */
     public function getIterator(): \Generator
     {
@@ -181,6 +211,8 @@ class Selection implements \IteratorAggregate, \Countable
 
     /**
      * Returns a single Entity by primary key, or null.
+     *
+     * @return T|null
      */
     public function get(mixed $key): ?Entity
     {
@@ -199,6 +231,8 @@ class Selection implements \IteratorAggregate, \Countable
 
     /**
      * Fetches the next row as a typed Entity, or null when exhausted.
+     *
+     * @return T|null
      */
     public function fetch(): ?Entity
     {
@@ -219,9 +253,9 @@ class Selection implements \IteratorAggregate, \Countable
     }
 
     /**
-     * Fetches all rows as an array of typed Entities.
+     * Fetches all rows as an array of typed Entities, keyed by the primary key.
      *
-     * @return Entity[]
+     * @return array<int|string, T>
      */
     public function fetchAll(): array
     {
@@ -267,8 +301,11 @@ class Selection implements \IteratorAggregate, \Countable
      * inserted data for tables without a usable primary key — see Nette's own
      * Selection::insert() for the exact edge cases).
      *
-     * @param  iterable  $data  Keyed by DB column names.
-     * @return Entity|int|array
+     * One row (an array keyed by column names) into a table with a primary
+     * key gives its Entity — the usual case; several rows give how many.
+     *
+     * @param  iterable<mixed>  $data  Keyed by DB column names.
+     * @return ($data is array<string, mixed> ? T : T|int|array<mixed>)
      */
     public function insert(iterable $data): Entity|int|array
     {
@@ -281,7 +318,7 @@ class Selection implements \IteratorAggregate, \Countable
     /**
      * Updates rows matching the current selection.
      *
-     * @param  iterable  $data  Keyed by DB column names.
+     * @param  iterable<mixed>  $data  Keyed by DB column names.
      * @return int  Number of affected rows.
      */
     public function update(iterable $data): int
@@ -302,6 +339,8 @@ class Selection implements \IteratorAggregate, \Countable
     /**
      * Creates an Entity instance from an already-fetched ActiveRow.
      * Useful when you have a raw ActiveRow from Nette and want to wrap it.
+     *
+     * @return T
      */
     public function createEntity(ActiveRow $activeRow): Entity
     {
@@ -310,7 +349,9 @@ class Selection implements \IteratorAggregate, \Countable
 
     /**
      * Wraps a Nette GroupedSelection in our typed GroupedSelection.
-     * Called by Entity property hooks for HasMany relations.
+     * Called by Entity property hooks for HasMany relations (their @var names the entity).
+     *
+     * @return GroupedSelection<Entity>
      */
     public function createGroupedSelection(NGroupedSelection $nGroupedSelection): GroupedSelection
     {
@@ -320,6 +361,8 @@ class Selection implements \IteratorAggregate, \Countable
     /**
      * Delegates unknown method calls to the underlying Nette Selection (fluent interface).
      * If NSelection returns itself, we return $this so the wrapper stays in place.
+     *
+     * @param array<mixed> $args
      */
     public function __call(string $name, array $args): mixed
     {

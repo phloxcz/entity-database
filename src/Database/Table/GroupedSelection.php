@@ -18,6 +18,9 @@ use Phlox\EntityDatabase\Entity\EntityFactory;
 /**
  * Wrapper around Nette GroupedSelection (lazy-loaded HasMany relations).
  * Returns typed Entity instances instead of ActiveRow.
+ *
+ * @template T of \Phlox\EntityDatabase\Entity\Entity
+ * @extends Selection<T>
  */
 class GroupedSelection extends Selection
 {

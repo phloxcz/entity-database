@@ -243,7 +243,8 @@ class PhpEntityRenderer
 
         return "\$this->_ctx->modified[{$this->dump($p->name)}] ?? false\n"
             . "    ? \$this->{$p->name}\n"
-            . "    : \$this->_ctx->activeRow?->{$p->column} ?? null";
+            // `??` tests the whole chain like isset(): no `?->` needed (PHPStan: nullsafe.neverNull)
+            . "    : \$this->_ctx->activeRow->{$p->column} ?? null";
     }
 
     private function addColumnSetHook(Property $prop, EntityPropDefinition $p): void
@@ -329,6 +330,8 @@ class PhpEntityRenderer
         if ($c->comment) {
             $prop->addComment($c->comment);
         }
+        // the related entity for PHPStan: foreach ($user->siteAccess as $access) — a UserSite
+        $prop->addComment("@var \\Phlox\\EntityDatabase\\Database\\Table\\GroupedSelection<{$c->type}>");
 
         $attrs = [
             'related' => $c->related,

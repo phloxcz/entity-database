@@ -46,6 +46,12 @@ class Explorer
         $this->nExplorer = $nExplorer;
     }
 
+    /**
+     * The table's rows as entities. PHPStan with the bundled extension
+     * (extension.neon) knows the entity class by the table's name.
+     *
+     * @return Selection<\Phlox\EntityDatabase\Entity\Entity>
+     */
     public function table(string $table): Selection
     {
         return new Selection($this->nExplorer->table($table), $this->entityFactory);

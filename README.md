@@ -353,6 +353,30 @@ The SQL Server example additionally requires the [`pdo_sqlsrv`](https://learn.mi
 
 ---
 
+## PHPStan
+
+`Selection` is generic: `Selection<T of Entity>`. Its fluent methods (`where()`, `order()`, `limit()`, …) reach Nette's Selection through `__call()` and are declared as `@method`, so PHPStan knows them. Has-many properties of generated entities carry `@var GroupedSelection<RelatedEntity>`.
+
+To make PHPStan see the entity class of `$explorer->table('user')` (a `Selection<App\Entity\User>`, so `fetch()`, `get()`, `insert()`, `fetchAll()` and iterating give `User`), include the bundled extension and tell it where the generated entities are:
+
+```neon
+includes:
+	- vendor/phloxcz/entity-database/extension.neon
+
+parameters:
+	entityDatabase:
+		entityDirs:
+			- %currentWorkingDirectory%/app/Entity
+			- %currentWorkingDirectory%/extensions/*/src/Entity   # glob patterns allowed
+	excludePaths:
+		analyse:
+			- app/Entity/*   # generated: the columns are ActiveRow's magic properties
+	universalObjectCratesClasses:
+		- Nette\Database\Table\ActiveRow   # raw rows (rawFetch(), plain Nette selections)
+```
+
+The extension reads the table → class map from the entities' `#[Table(name: '…')]`. A table name that isn't a literal string (`table($name)`) stays `Selection<Entity>`; annotate the result where it matters.
+
 ## More documentation
 
 A more detailed, example-heavy reference (in Czech) lives in [`docs/readme.md`](docs/readme.md) — architecture overview, naming strategies, `onClass`/`onDataType` hooks, and the full exception reference.
