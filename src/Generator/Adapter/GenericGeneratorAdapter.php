@@ -46,6 +46,7 @@ class GenericGeneratorAdapter implements GeneratorAdapter
         
         // bool
         'bool' => 'bool',
+        'boolean' => 'bool',
         'bit' => 'bool',
         
         // string

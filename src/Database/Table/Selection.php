@@ -16,8 +16,7 @@ use Nette;
 use Nette\Database\Table\ActiveRow;
 use Nette\Database\Table\GroupedSelection as NGroupedSelection;
 use Nette\Database\Table\Selection as NSelection;
-use Phlox\EntityDatabase\Database\Search\GenericSearchAdapter;
-use Phlox\EntityDatabase\Database\Search\SearchAdapter;
+use Phlox\EntityDatabase\Database\Search\SearchCondition;
 use Phlox\EntityDatabase\Entity\Entity;
 use Phlox\EntityDatabase\Entity\EntityFactory;
 use Phlox\EntityDatabase\Exception\SearchException;
@@ -37,7 +36,6 @@ use Phlox\EntityDatabase\Metadata\MetaStorage;
  *
  * @method static select(string $columns, mixed ...$params)
  * @method static wherePrimary(mixed $key)
- * @method static where(string|array<int|string, mixed> $condition, mixed ...$params)
  * @method static joinWhere(string $tableChain, string $condition, mixed ...$params)
  * @method static whereOr(array<string, mixed> $parameters)
  * @method static order(string $columns, mixed ...$params)
@@ -82,6 +80,24 @@ class Selection implements \IteratorAggregate, \Countable
     }
 
     /**
+     * Same as Nette's where(), except that strings written right in a condition,
+     * such as `condition:` of a relation in entities.neon, stay what they are
+     * (see SqlLiterals).
+     *
+     * @param string|array<int|string, mixed> $condition
+     */
+    public function where(string|array $condition, mixed ...$params): static
+    {
+        if (is_string($condition) && $params === [] && str_contains($condition, "'")) {
+            [$condition, $params] = SqlLiterals::extract($condition);
+        }
+
+        $this->nSelection->where($condition, ...$params);
+
+        return $this;
+    }
+
+    /**
      * Without $column: counts already-fetched rows in memory (executing the
      * query first if it hasn't run yet) — also what makes count($selection)
      * work via the Countable interface. With $column: runs a SQL COUNT(),
@@ -101,6 +117,17 @@ class Selection implements \IteratorAggregate, \Countable
     }
 
     /**
+     * Returns the entity class of the current table, in the form of Foo::class.
+     *
+     * @return class-string<T>
+     */
+    public function getEntityName(): string
+    {
+        /** @var class-string<T> */
+        return ltrim($this->getName(), '\\');
+    }
+
+    /**
      * Returns the underlying DB table name.
      */
     public function getTableName(): string
@@ -117,19 +144,6 @@ class Selection implements \IteratorAggregate, \Countable
     }
 
     /**
-     * Separators folded to spaces before splitting $term into words — so e.g.
-     * "BDP-International" also matches a DB value stored as "BDP International"
-     * (the hyphen would otherwise force an exact, unlikely-to-match substring).
-     */
-    private const SearchSpecialChars = [
-        ':',';','-','.',',','_','[',']',
-        '(',')','{','}','/','*','+','=',
-        '|','\\','\'','"','<','>','?','!',
-        '@','&','~','`','–','—',
-        '„','“','‘','’','”','‚'
-    ];
-
-    /**
      * Filters the selection to rows where every word of $term appears
      * (case-insensitively) in the same `searchable: true` column — columns
      * matched this way are then OR'd together. So "Jan Novák" matches a
@@ -137,7 +151,7 @@ class Selection implements \IteratorAggregate, \Countable
      * just an exact "...Jan Novák..." substring.
      *
      * $term is first split into words on whitespace and on the separator
-     * characters in self::SearchSpecialChars (so "BDP-International" and
+     * characters in SearchCondition (so "BDP-International" and
      * "BDP International" search identically) — unless $term consists
      * entirely of such characters, in which case it's kept as one literal
      * word (so searching for a literal "@" or "-" still works).
@@ -163,50 +177,24 @@ class Selection implements \IteratorAggregate, \Countable
             );
         }
 
-        $words = $this->tokenizeSearchTerm($term);
-        if (!$words) {
-            return $this;
+        return $this->searchIn(array_values($meta->searchables), $term, $ignoreDiacritics);
+    }
+
+    /**
+     * Same as search(), in the given columns instead of those marked
+     * `searchable: true` — for when only some of them may be searched, such as
+     * when a client's search must not reach a write-only column.
+     *
+     * @param  list<string>  $columns
+     */
+    public function searchIn(array $columns, string $term, bool $ignoreDiacritics = false): static
+    {
+        $condition = SearchCondition::build($this->nSelection->getExplorer()->getConnection(), $columns, $term, $ignoreDiacritics);
+        if ($condition !== null) {
+            $this->nSelection->where($condition[0], ...$condition[1]);
         }
-
-        $adapter    = $this->resolveSearchAdapter();
-        $driver     = $this->nSelection->getExplorer()->getConnection()->getDriver();
-        $conditions = [];
-        $params     = [];
-
-        foreach ($meta->searchables as $column) {
-            $columnDb       = $driver->delimite($column);
-            $wordConditions = [];
-            foreach ($words as $word) {
-                [$sql, $conditionParams] = $adapter->buildCondition($columnDb, $word, $ignoreDiacritics);
-                $wordConditions[] = $sql;
-                array_push($params, ...$conditionParams);
-            }
-            $conditions[] = '(' . implode(' AND ', $wordConditions) . ')';
-        }
-
-        $this->nSelection->where('(' . implode(' OR ', $conditions) . ')', ...$params);
 
         return $this;
-    }
-
-    /** @return string[] */
-    private function tokenizeSearchTerm(string $term): array
-    {
-        if (preg_match('#^[' . preg_quote(implode('', self::SearchSpecialChars), '#') . ']+$#u', $term)) {
-            return [$term];
-        }
-
-        $normalized = str_replace(self::SearchSpecialChars, ' ', $term);
-
-        return array_values(array_filter(explode(' ', $normalized), static fn(string $w) => $w !== ''));
-    }
-
-    private function resolveSearchAdapter(): SearchAdapter
-    {
-        $type  = explode(':', $this->nSelection->getExplorer()->getConnection()->getDsn())[0];
-        $class = 'Phlox\\EntityDatabase\\Database\\Search\\' . ucfirst($type) . 'SearchAdapter';
-
-        return class_exists($class) ? new $class() : new GenericSearchAdapter();
     }
 
     /**

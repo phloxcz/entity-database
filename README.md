@@ -229,7 +229,10 @@ Matches `%term%`, case-insensitive, OR'd across every column marked `searchable:
 
 ```php
 $db->table('users')->search('jan', ignoreDiacritics: true)->fetchAll(); // also matches "Ján"
+$db->table('users')->searchIn(['email'], 'jan')->fetchAll();            // only in these columns
 ```
+
+Firebird needs [`phloxcz/firebird-database`](../phlox-firebird-database) as its driver, and has no `ignoreDiacritics`: there, it's up to the collation of a column.
 
 Diacritics-insensitive search is opt-in and DB-specific:
 
