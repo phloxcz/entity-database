@@ -1,5 +1,7 @@
 # phloxcz/entity-database
 
+**English** | [Česky](README.cs.md)
+
 **Entity layer for [Nette Database](https://doc.nette.org/en/database).**
 
 Generates typed PHP 8.4 entity classes from your database schema. Entities wrap `ActiveRow` via composition — Nette Database's lazy loading, caching, query building and relation traversal all continue to work unchanged underneath. You get real typed properties (PHP 8.4 property hooks, not just doc-comments), IDE autocompletion, dirty-tracking, and typed access to relations and search — without giving up anything Nette Database already does well.
@@ -236,7 +238,7 @@ $db->table('users')->search('jan', ignoreDiacritics: true)->fetchAll(); // also 
 $db->table('users')->searchIn(['email'], 'jan')->fetchAll();            // only in these columns
 ```
 
-Firebird needs [`phloxcz/firebird-database`](../phlox-firebird-database) as its driver, and has no `ignoreDiacritics`: there, it's up to the collation of a column.
+Firebird needs [`phloxcz/firebird-database`](https://github.com/phloxcz/firebird-database) as its driver, and has no `ignoreDiacritics`: there, it's up to the collation of a column.
 
 Diacritics-insensitive search is opt-in and DB-specific:
 
