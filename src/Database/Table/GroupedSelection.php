@@ -28,4 +28,17 @@ class GroupedSelection extends Selection
     {
         parent::__construct($nSelection, $entityFactory);
     }
+
+    /**
+     * A row of a relation belongs to its parent, which Nette only knows from within.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function prepareInsert(array $data): array
+    {
+        $parent = (fn(): array => [$this->column => $this->active])->call($this->nSelection);
+
+        return $parent + $data;
+    }
 }

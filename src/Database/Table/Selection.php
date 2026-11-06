@@ -57,6 +57,9 @@ use Phlox\EntityDatabase\Metadata\MetaStorage;
  */
 class Selection implements \IteratorAggregate, \Countable
 {
+    /** What a driver says to Driver::isSupported() when insert() has to ask for a new key by RETURNING */
+    public const SupportInsertReturning = 'insertReturning';
+
     public readonly EntityFactory $entityFactory;
     public readonly NSelection $nSelection;
 
@@ -292,15 +295,59 @@ class Selection implements \IteratorAggregate, \Countable
      * One row (an array keyed by column names) into a table with a primary
      * key gives its Entity — the usual case; several rows give how many.
      *
+     * A database that can't tell the last ID, such as Firebird with PDO, is asked by RETURNING.
+     *
      * @param  iterable<mixed>  $data  Keyed by DB column names.
      * @return ($data is array<string, mixed> ? T : T|int|array<mixed>)
      */
     public function insert(iterable $data): Entity|int|array
     {
-        $result = $this->nSelection->insert($data);
+        $result = $this->insertReturning($data) ?? $this->nSelection->insert($data);
         return $result instanceof ActiveRow
             ? $this->entityFactory->create($result, $this)
             : $result;
+    }
+
+    /**
+     * @param  iterable<mixed>  $data
+     * @return ActiveRow|null Null when it's not the case for it, and nothing was inserted
+     */
+    private function insertReturning(iterable $data): ?ActiveRow
+    {
+        // One row, whose single primary key the database has to come up with
+        if (!is_array($data) || $data === [] || array_is_list($data)) {
+            return null;
+        }
+
+        $explorer = $this->nSelection->getExplorer();
+        $driver = $explorer->getConnection()->getDriver();
+        if (!$driver->isSupported(self::SupportInsertReturning)) {
+            return null;
+        }
+
+        $primary = $this->nSelection->getPrimary(false);
+        if (!is_string($primary) || isset($data[$primary])) {
+            return null;
+        }
+
+        $id = $explorer->query(
+            $this->nSelection->getSqlBuilder()->buildInsertQuery() . ' ?values RETURNING ' . $driver->delimite($primary),
+            $this->prepareInsert($data),
+        )->fetchField();
+
+        return $this->nSelection->createSelectionInstance()->select('*')->wherePrimary($id)->fetch()
+            ?? throw new \LogicException("The row inserted to {$this->nSelection->getName()} can't be found by its key.");
+    }
+
+    /**
+     * What a row needs on top of what it was given.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function prepareInsert(array $data): array
+    {
+        return $data;
     }
 
     /**

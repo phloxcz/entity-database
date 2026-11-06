@@ -6,7 +6,7 @@ Generates typed PHP 8.4 entity classes from your database schema. Entities wrap 
 
 > ⚠️ This package is under active development. The API is not yet stable.
 
-Tested end-to-end against **SQLite, MySQL, PostgreSQL, and SQL Server** — see [Examples & testing](#examples--testing).
+Tested end-to-end against **SQLite, MySQL, PostgreSQL, and SQL Server** — see [Examples &amp; testing](#examples--testing).
 
 ---
 
@@ -205,7 +205,11 @@ $user->saveModified();              // writes only the changed columns, scoped b
 $user->delete();                    // deletes this row
 
 // both throw EntityException on an entity with no underlying ActiveRow
-// (a manually-constructed one) — insert always goes through Selection::insert()
+// (a manually-constructed one) — insert always goes through Selection::insert(),
+// which can take what such an entity holds, translated to columns:
+$user = new User();
+$user->email = 'new@example.com';
+$created = $db->table('users')->insert($user->toModifiedArrayDb());
 
 // transactions / raw SQL — Explorer wraps these explicitly (not via __call), so
 // the callback below receives *this* Explorer and entity mapping keeps working
@@ -236,12 +240,12 @@ Firebird needs [`phloxcz/firebird-database`](../phlox-firebird-database) as its 
 
 Diacritics-insensitive search is opt-in and DB-specific:
 
-| Driver | Mechanism | Requirement |
-|---|---|---|
-| MySQL | `COLLATE UTF8MB4_0900_AI_CI` | MySQL 8.0+ |
-| PostgreSQL | `unaccent()` | extension enabled: `CREATE EXTENSION IF NOT EXISTS unaccent;` |
-| SQL Server | `COLLATE LATIN1_GENERAL_CI_AI` | works out of the box |
-| SQLite | — | not supported — throws `SearchException` |
+| Driver     | Mechanism                        | Requirement                                                     |
+| ---------- | -------------------------------- | --------------------------------------------------------------- |
+| MySQL      | `COLLATE UTF8MB4_0900_AI_CI`   | MySQL 8.0+                                                      |
+| PostgreSQL | `unaccent()`                   | extension enabled: `CREATE EXTENSION IF NOT EXISTS unaccent;` |
+| SQL Server | `COLLATE LATIN1_GENERAL_CI_AI` | works out of the box                                            |
+| SQLite     | —                               | not supported — throws `SearchException`                     |
 
 `LOWER()`/`COLLATE`/`unaccent()` on a column generally prevents use of a plain index — worth an expression index if the table is large.
 
@@ -251,18 +255,18 @@ Diacritics-insensitive search is opt-in and DB-specific:
 
 The generator maps native DB column types to PHP types via a `GeneratorAdapter`, auto-selected from your connection's DSN scheme. A few DB-specific conventions are handled for you:
 
-| Native type | PHP type | Notes |
-|---|---|---|
-| MySQL `TINYINT(1)` | `bool` | the de-facto MySQL boolean convention; wider `TINYINT` stays `int` |
-| MySQL `SET(...)` | `array` | comma-separated string parsed for you |
-| MySQL `JSON`, Postgres `json`/`jsonb` | `array`\|`object` | decoded via the property's `get` hook; control with `override.<col>.json: array\|object` |
-| Postgres array types (`int4[]`, `text[]`, ...) | `array` | parsed from the Postgres array literal (single-dimension) |
-| Postgres native `boolean` | `bool` | no conversion needed |
-| SQL Server `BIT` | `bool` | some drivers hand this back as a raw `'1'`/`'0'` string — normalized for you |
-| SQL Server `NVARCHAR`/`NCHAR`/`NTEXT` | `string` | |
-| SQL Server `MONEY`, `SMALLMONEY` | `float` | |
-| SQL Server `DATETIME2`, `UNIQUEIDENTIFIER` | `\DateTime`, `string` | |
-| `DATE`/`DATETIME`/`TIMESTAMP` (any driver) | `\DateTime` | setter also accepts a `string`, parsed via `format` (or common fallbacks) |
+| Native type                                        | PHP type                  | Notes                                                                                       |
+| -------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| MySQL `TINYINT(1)`                               | `bool`                  | the de-facto MySQL boolean convention; wider `TINYINT` stays `int`                      |
+| MySQL `SET(...)`                                 | `array`                 | comma-separated string parsed for you                                                       |
+| MySQL `JSON`, Postgres `json`/`jsonb`        | `array`\|`object`     | decoded via the property's `get` hook; control with `override.<col>.json: array\|object` |
+| Postgres array types (`int4[]`, `text[]`, ...) | `array`                 | parsed from the Postgres array literal (single-dimension)                                   |
+| Postgres native `boolean`                        | `bool`                  | no conversion needed                                                                        |
+| SQL Server `BIT`                                 | `bool`                  | some drivers hand this back as a raw `'1'`/`'0'` string — normalized for you           |
+| SQL Server `NVARCHAR`/`NCHAR`/`NTEXT`        | `string`                |                                                                                             |
+| SQL Server `MONEY`, `SMALLMONEY`               | `float`                 |                                                                                             |
+| SQL Server `DATETIME2`, `UNIQUEIDENTIFIER`     | `\DateTime`, `string` |                                                                                             |
+| `DATE`/`DATETIME`/`TIMESTAMP` (any driver)   | `\DateTime`             | setter also accepts a `string`, parsed via `format` (or common fallbacks)               |
 
 Write your own adapter (`Phlox\EntityDatabase\Generator\Adapter\GeneratorAdapter`) for anything not covered, or override per-column with `override.<col>.type` in `entities.neon`.
 
@@ -272,29 +276,29 @@ Write your own adapter (`Phlox\EntityDatabase\Generator\Adapter\GeneratorAdapter
 
 ### Entity set options (in your Nette config)
 
-| Key | Type | Description |
-|---|---|---|
-| `namespace` | string | PHP namespace for generated classes |
-| `output` | string | Directory where classes are written |
-| `config` | string\|array | Path(s) to NEON/JSON files **or** inline table definitions |
-| `cleanSkip` | string[] | Filenames to preserve during regeneration |
+| Key           | Type          | Description                                                      |
+| ------------- | ------------- | ---------------------------------------------------------------- |
+| `namespace` | string        | PHP namespace for generated classes                              |
+| `output`    | string        | Directory where classes are written                              |
+| `config`    | string\|array | Path(s) to NEON/JSON files **or** inline table definitions |
+| `cleanSkip` | string[]      | Filenames to preserve during regeneration                        |
 
 ### Table config (in `entities.neon`, per table)
 
-| Key | Type | Description |
-|---|---|---|
-| `class` | string | **Required.** Generated class name |
-| `comment` | string | Class doc-comment |
-| `extends` | string | Parent class (default `Phlox\EntityDatabase\Entity\Entity`) |
-| `skip` | string[] | Columns to omit entirely |
-| `searchable` | string[] | Columns usable with `Selection::search()` |
-| `rename` | `{col: propName}` | Override the generated property name for a column |
-| `override` | `{col: {type?, format?, access?, comment?, json?}}` | Fine-tune a specific column's generated property |
-| `virtual` | `{propName: {type, access, nullable, comment}}` | Properties with no backing column |
-| `references` | `{col: {name, comment}}` | Rename an auto-detected BelongsTo property |
-| `hasMany` | `{propName: {through, table?, condition?, comment?}}` | HasMany collections |
-| `onClass` | callable\|callable[] | Hook(s) to add methods/traits/constants to the generated class |
-| `onDataType` | callable\|callable[] | Hook(s) to override the DB-type → PHP-type mapping per column |
+| Key            | Type                                                    | Description                                                    |
+| -------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| `class`      | string                                                  | **Required.** Generated class name                       |
+| `comment`    | string                                                  | Class doc-comment                                              |
+| `extends`    | string                                                  | Parent class (default `Phlox\EntityDatabase\Entity\Entity`)  |
+| `skip`       | string[]                                                | Columns to omit entirely                                       |
+| `searchable` | string[]                                                | Columns usable with `Selection::search()`                    |
+| `rename`     | `{col: propName}`                                     | Override the generated property name for a column              |
+| `override`   | `{col: {type?, format?, access?, comment?, json?}}`   | Fine-tune a specific column's generated property               |
+| `virtual`    | `{propName: {type, access, nullable, comment}}`       | Properties with no backing column                              |
+| `references` | `{col: {name, comment}}`                              | Rename an auto-detected BelongsTo property                     |
+| `hasMany`    | `{propName: {through, table?, condition?, comment?}}` | HasMany collections                                            |
+| `onClass`    | callable\|callable[]                                    | Hook(s) to add methods/traits/constants to the generated class |
+| `onDataType` | callable\|callable[]                                    | Hook(s) to override the DB-type → PHP-type mapping per column |
 
 ---
 
