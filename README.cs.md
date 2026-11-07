@@ -213,6 +213,9 @@ $user = new User();
 $user->email = 'new@example.com';
 $created = $db->table('users')->insert($user->toModifiedArrayDb());
 
+// Selection, ze které načtená entita pochází; u ručně vytvořené null
+$user->getSelection();
+
 // transakce a čisté SQL: Explorer je obaluje explicitně (ne přes __call), takže
 // callback níže dostane *tento* Explorer a mapování entit dál funguje
 $db->transaction(function (Explorer $db) {

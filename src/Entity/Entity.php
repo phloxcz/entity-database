@@ -165,6 +165,16 @@ abstract class Entity implements \ArrayAccess, \IteratorAggregate
     }
 
     /**
+     * The Selection this row was fetched from; null for an entity made by hand.
+     * Other tables of the same database are reached through it, as a library
+     * given one record rather than a selection needs to.
+     */
+    public function getSelection(): ?Selection
+    {
+        return $this->_ctx->selection;
+    }
+
+    /**
      * Returns the raw DB column → value array from the underlying ActiveRow.
      * Does not apply property-name mapping or modified tracking.
      *

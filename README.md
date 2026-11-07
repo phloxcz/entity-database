@@ -213,6 +213,9 @@ $user = new User();
 $user->email = 'new@example.com';
 $created = $db->table('users')->insert($user->toModifiedArrayDb());
 
+// the Selection a fetched entity came from, null for a manually-constructed one
+$user->getSelection();
+
 // transactions / raw SQL — Explorer wraps these explicitly (not via __call), so
 // the callback below receives *this* Explorer and entity mapping keeps working
 $db->transaction(function (Explorer $db) {
